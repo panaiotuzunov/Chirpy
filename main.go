@@ -8,5 +8,6 @@ func main() {
 		Handler: mux,
 		Addr:    ":8080",
 	}
+	mux.Handle("/", http.FileServer(http.Dir("./")))
 	server.ListenAndServe()
 }
