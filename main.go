@@ -39,9 +39,9 @@ func main() {
 		Addr:    ":8080",
 	}
 	mux.Handle("/app/", cfg.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir("./")))))
-	mux.HandleFunc("/healthz", handlerHealthz)
-	mux.HandleFunc("/metrics", cfg.ReturnMetrics)
-	mux.HandleFunc("/reset", cfg.ResetMetrics)
+	mux.HandleFunc("GET /api/healthz", handlerHealthz)
+	mux.HandleFunc("GET /api/metrics", cfg.ReturnMetrics)
+	mux.HandleFunc("POST /api/reset", cfg.ResetMetrics)
 	server.ListenAndServe()
 }
 
