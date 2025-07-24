@@ -43,7 +43,7 @@ func handlerValidateChirp(writer http.ResponseWriter, req *http.Request) {
 	type parameters struct {
 		Body  string `json:"body"`
 		Error string `json:"error"`
-		Valid string `json:"valid"`
+		Valid bool   `json:"valid"`
 	}
 
 	decoder := json.NewDecoder(req.Body)
@@ -53,21 +53,40 @@ func handlerValidateChirp(writer http.ResponseWriter, req *http.Request) {
 		writer.Header().Add("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusInternalServerError)
 		respBody := parameters{
-			Error: fmt.Sprintf("Error decoding parameters: %s", err),
+			Error: "Error decoding request",
 		}
 		data, err := json.Marshal(respBody)
 		if err != nil {
 			log.Printf("Error encoding JSON: %s", err)
+			return
 		}
 		writer.Write(data)
 		return
 	}
 	if len(params.Body) > 140 {
-
+		respBody := parameters{
+			Error: "Chirp exceeds the maximum length of 140 characters",
+		}
+		data, err := json.Marshal(respBody)
+		if err != nil {
+			log.Printf("Error encoding JSON: %s", err)
+			return
+		}
+		writer.WriteHeader(400)
+		writer.Write(data)
+		return
 	}
+	respBody := parameters{
+		Valid: true,
+	}
+	data, err := json.Marshal(respBody)
+	if err != nil {
+		log.Printf("Error encoding JSON: %s", err)
+		return
+	}
+	writer.Write(data)
 	writer.Header().Add("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
-
 }
 
 func main() {
