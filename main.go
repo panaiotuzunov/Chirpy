@@ -40,53 +40,43 @@ func handlerHealthz(writer http.ResponseWriter, req *http.Request) {
 }
 
 func handlerValidateChirp(writer http.ResponseWriter, req *http.Request) {
-	type parameters struct {
-		Body  string `json:"body"`
+	type requestBody struct {
+		Body string `json:"body"`
+	}
+
+	type errorResponse struct {
 		Error string `json:"error"`
-		Valid bool   `json:"valid"`
+	}
+
+	type validResponse struct {
+		Valid bool `json:"valid"`
 	}
 
 	decoder := json.NewDecoder(req.Body)
-	params := parameters{}
+	params := requestBody{}
 	if err := decoder.Decode(&params); err != nil {
-		log.Printf("Error decoding parameters: %s", err)
-		writer.Header().Add("Content-Type", "application/json")
-		writer.WriteHeader(http.StatusInternalServerError)
-		respBody := parameters{
-			Error: "Error decoding request",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			log.Printf("Error encoding JSON: %s", err)
-			return
-		}
-		writer.Write(data)
+		log.Printf("Error decoding JSON: %s", err)
+		writeJSONResponse(writer, 500, errorResponse{Error: "Error decoding JSON"})
 		return
 	}
 	if len(params.Body) > 140 {
-		respBody := parameters{
-			Error: "Chirp exceeds the maximum length of 140 characters",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			log.Printf("Error encoding JSON: %s", err)
-			return
-		}
-		writer.WriteHeader(400)
-		writer.Write(data)
+		writeJSONResponse(writer, 400, errorResponse{Error: "Chirp is too long"})
 		return
 	}
-	respBody := parameters{
-		Valid: true,
-	}
-	data, err := json.Marshal(respBody)
+	writeJSONResponse(writer, 200, validResponse{Valid: true})
+}
+
+func writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+
+	jsonData, err := json.Marshal(data)
 	if err != nil {
-		log.Printf("Error encoding JSON: %s", err)
+		log.Printf("Error marshaling JSON: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	writer.Write(data)
-	writer.Header().Add("Content-Type", "application/json")
-	writer.WriteHeader(http.StatusOK)
+	w.Write(jsonData)
 }
 
 func main() {
