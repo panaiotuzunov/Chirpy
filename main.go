@@ -1,18 +1,23 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
 
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/panaiotuzunov/Chirpy/internal/database"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	db             *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -100,7 +105,12 @@ func checkAndHideProfaneWords(chirp string) string {
 }
 
 func main() {
-	cfg := apiConfig{}
+	godotenv.Load(".env")
+	db, err := sql.Open("postgres", os.Getenv("DB_URL"))
+	if err != nil {
+		log.Fatalf("Error connecting to DB - %v", err)
+	}
+	cfg := apiConfig{db: database.New(db)}
 	mux := http.NewServeMux()
 	server := http.Server{
 		Handler: mux,
