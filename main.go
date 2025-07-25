@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -43,13 +44,11 @@ func handlerValidateChirp(writer http.ResponseWriter, req *http.Request) {
 	type requestBody struct {
 		Body string `json:"body"`
 	}
-
 	type errorResponse struct {
 		Error string `json:"error"`
 	}
-
-	type validResponse struct {
-		Valid bool `json:"valid"`
+	type cleanedResponse struct {
+		Cleaned_body string `json:"cleaned_body"`
 	}
 
 	decoder := json.NewDecoder(req.Body)
@@ -63,10 +62,10 @@ func handlerValidateChirp(writer http.ResponseWriter, req *http.Request) {
 		writeJSONResponse(writer, 400, errorResponse{Error: "Chirp is too long"})
 		return
 	}
-	writeJSONResponse(writer, 200, validResponse{Valid: true})
+	writeJSONResponse(writer, 200, cleanedResponse{Cleaned_body: checkAndHideProfaneWords(params.Body)})
 }
 
-func writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
+func writeJSONResponse(w http.ResponseWriter, statusCode int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
@@ -77,6 +76,25 @@ func writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) 
 		return
 	}
 	w.Write(jsonData)
+}
+
+func checkAndHideProfaneWords(chirp string) string {
+	profaneWords := map[string]struct{}{
+		"kerfuffle": {},
+		"sharbert":  {},
+		"fornax":    {},
+	}
+	var resultSlice []string
+	words := strings.SplitSeq(chirp, " ")
+	for word := range words {
+		_, isProfane := profaneWords[strings.ToLower(word)]
+		if isProfane {
+			resultSlice = append(resultSlice, "****")
+			continue
+		}
+		resultSlice = append(resultSlice, word)
+	}
+	return strings.Join(resultSlice, " ")
 }
 
 func main() {
