@@ -25,14 +25,18 @@ type apiConfig struct {
 type errorResponse struct {
 	Error string `json:"error"`
 }
-type cleanedResponse struct {
-	Cleaned_body string `json:"cleaned_body"`
-}
 type User struct {
 	ID        uuid.UUID `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+}
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
 }
 
 const maxChirpLength int = 140
@@ -92,10 +96,10 @@ func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Re
 	writeJSONResponse(writer, http.StatusCreated, User{ID: userResult.ID, CreatedAt: userResult.CreatedAt, UpdatedAt: userResult.UpdatedAt, Email: userResult.Email})
 }
 
-func handlerChirps(writer http.ResponseWriter, req *http.Request) {
+func (cfg *apiConfig) handlerChirps(writer http.ResponseWriter, req *http.Request) {
 	var requestData struct {
-		Body   string `json:"body"`
-		UserID string `json:"user_id"`
+		Body   string    `json:"body"`
+		UserID uuid.UUID `json:"user_id"`
 	}
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&requestData); err != nil {
@@ -107,8 +111,13 @@ func handlerChirps(writer http.ResponseWriter, req *http.Request) {
 		writeErrorResponse(writer, http.StatusBadRequest, "Chirp is too long")
 		return
 	}
-
-	writeJSONResponse(writer, http.StatusOK, cleanedResponse{Cleaned_body: hideProfanity(requestData.Body)})
+	chirp, err := cfg.db.CreateChirp(req.Context(), database.CreateChirpParams{Body: hideProfanity(requestData.Body), UserID: requestData.UserID})
+	if err != nil {
+		log.Printf("Error decoding JSON: %s", err)
+		writeErrorResponse(writer, http.StatusInternalServerError, "Error creating chirp")
+		return
+	}
+	writeJSONResponse(writer, http.StatusCreated, Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID})
 }
 
 func writeJSONResponse(w http.ResponseWriter, statusCode int, data any) {
@@ -162,7 +171,7 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", handlerHealthz)
 	mux.HandleFunc("GET /admin/metrics", cfg.ReturnMetrics)
 	mux.HandleFunc("POST /admin/reset", cfg.Reset)
-	mux.HandleFunc("POST /api/chirps", handlerChirps)
+	mux.HandleFunc("POST /api/chirps", cfg.handlerChirps)
 	mux.HandleFunc("POST /api/users", cfg.handlerCreateUser)
 	log.Print("Server is running")
 	server.ListenAndServe()
