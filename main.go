@@ -92,9 +92,10 @@ func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Re
 	writeJSONResponse(writer, http.StatusCreated, User{ID: userResult.ID, CreatedAt: userResult.CreatedAt, UpdatedAt: userResult.UpdatedAt, Email: userResult.Email})
 }
 
-func handlerValidateChirp(writer http.ResponseWriter, req *http.Request) {
+func handlerChirps(writer http.ResponseWriter, req *http.Request) {
 	var requestData struct {
-		Body string `json:"body"`
+		Body   string `json:"body"`
+		UserID string `json:"user_id"`
 	}
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&requestData); err != nil {
@@ -106,7 +107,8 @@ func handlerValidateChirp(writer http.ResponseWriter, req *http.Request) {
 		writeErrorResponse(writer, http.StatusBadRequest, "Chirp is too long")
 		return
 	}
-	writeJSONResponse(writer, http.StatusOK, cleanedResponse{Cleaned_body: checkAndHideProfaneWords(requestData.Body)})
+
+	writeJSONResponse(writer, http.StatusOK, cleanedResponse{Cleaned_body: hideProfanity(requestData.Body)})
 }
 
 func writeJSONResponse(w http.ResponseWriter, statusCode int, data any) {
@@ -125,7 +127,7 @@ func writeErrorResponse(w http.ResponseWriter, statusCode int, text string) {
 	writeJSONResponse(w, statusCode, errorResponse{Error: text})
 }
 
-func checkAndHideProfaneWords(chirp string) string {
+func hideProfanity(chirp string) string {
 	profaneWords := map[string]struct{}{
 		"kerfuffle": {},
 		"sharbert":  {},
@@ -160,7 +162,7 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", handlerHealthz)
 	mux.HandleFunc("GET /admin/metrics", cfg.ReturnMetrics)
 	mux.HandleFunc("POST /admin/reset", cfg.Reset)
-	mux.HandleFunc("POST /api/validate_chirp", handlerValidateChirp)
+	mux.HandleFunc("POST /api/chirps", handlerChirps)
 	mux.HandleFunc("POST /api/users", cfg.handlerCreateUser)
 	log.Print("Server is running")
 	server.ListenAndServe()
