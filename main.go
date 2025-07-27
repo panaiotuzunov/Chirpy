@@ -96,7 +96,7 @@ func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Re
 	writeJSONResponse(writer, http.StatusCreated, User{ID: userResult.ID, CreatedAt: userResult.CreatedAt, UpdatedAt: userResult.UpdatedAt, Email: userResult.Email})
 }
 
-func (cfg *apiConfig) handlerChirps(writer http.ResponseWriter, req *http.Request) {
+func (cfg *apiConfig) handlerAddChirp(writer http.ResponseWriter, req *http.Request) {
 	var requestData struct {
 		Body   string    `json:"body"`
 		UserID uuid.UUID `json:"user_id"`
@@ -118,6 +118,40 @@ func (cfg *apiConfig) handlerChirps(writer http.ResponseWriter, req *http.Reques
 		return
 	}
 	writeJSONResponse(writer, http.StatusCreated, Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID})
+}
+
+func (cfg *apiConfig) handlerChirps(writer http.ResponseWriter, req *http.Request) {
+	chirps, err := cfg.db.GetChirps(req.Context())
+	if err != nil {
+		log.Printf("Error getting chirps from DB: %s", err)
+		writeErrorResponse(writer, http.StatusInternalServerError, "Error getting chirps")
+		return
+	}
+	var resultChirps []Chirp
+	for _, chirp := range chirps {
+		resultChirps = append(resultChirps, Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID})
+	}
+	writeJSONResponse(writer, http.StatusOK, resultChirps)
+}
+
+func (cfg *apiConfig) handlerGetChirp(writer http.ResponseWriter, req *http.Request) {
+	id, err := uuid.Parse(req.PathValue("chirpID"))
+	if err != nil {
+		log.Printf("Error parsing chirpID argument: %s", err)
+		writeErrorResponse(writer, http.StatusBadRequest, "Invalid ID")
+		return
+	}
+	chirp, err := cfg.db.GetChirpByID(req.Context(), id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeErrorResponse(writer, http.StatusNotFound, "Not found")
+			return
+		}
+		log.Printf("Error getting chirp from DB: %s", err)
+		writeErrorResponse(writer, http.StatusInternalServerError, "Error getting chirp")
+		return
+	}
+	writeJSONResponse(writer, http.StatusOK, Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID})
 }
 
 func writeJSONResponse(w http.ResponseWriter, statusCode int, data any) {
@@ -171,7 +205,9 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", handlerHealthz)
 	mux.HandleFunc("GET /admin/metrics", cfg.ReturnMetrics)
 	mux.HandleFunc("POST /admin/reset", cfg.Reset)
-	mux.HandleFunc("POST /api/chirps", cfg.handlerChirps)
+	mux.HandleFunc("GET /api/chirps", cfg.handlerChirps)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.handlerGetChirp)
+	mux.HandleFunc("POST /api/chirps", cfg.handlerAddChirp)
 	mux.HandleFunc("POST /api/users", cfg.handlerCreateUser)
 	log.Print("Server is running")
 	server.ListenAndServe()
