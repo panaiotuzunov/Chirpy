@@ -102,11 +102,40 @@ func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Re
 		writeErrorResponse(writer, http.StatusInternalServerError, "Error creating user.")
 		return
 	}
-	writeJSONResponse(writer, http.StatusCreated, User{ID: userResult.ID, CreatedAt: userResult.CreatedAt, UpdatedAt: userResult.UpdatedAt, Email: userResult.Email})
+	writeJSONResponse(writer, http.StatusCreated, User{
+		ID:        userResult.ID,
+		CreatedAt: userResult.CreatedAt,
+		UpdatedAt: userResult.UpdatedAt,
+		Email:     userResult.Email})
 }
 
 func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request) {
-
+	var requestData struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+	decoder := json.NewDecoder(req.Body)
+	if err := decoder.Decode(&requestData); err != nil {
+		log.Printf("Error decoding JSON: %s", err)
+		writeErrorResponse(writer, http.StatusInternalServerError, "Error decoding JSON")
+		return
+	}
+	user, err := cfg.db.GetUserByEmail(req.Context(), requestData.Email)
+	if err != nil {
+		log.Printf("Error getting user from DB: %s", err)
+		writeErrorResponse(writer, http.StatusInternalServerError, "DB Server Error.")
+		return
+	}
+	if err := auth.CheckPasswordHash(requestData.Password, user.HashedPassword); err != nil {
+		writeErrorResponse(writer, http.StatusUnauthorized, "incorrect email or password")
+		return
+	}
+	writeJSONResponse(writer, http.StatusOK, User{
+		ID:        user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email:     user.Email,
+	})
 }
 
 func (cfg *apiConfig) handlerAddChirp(writer http.ResponseWriter, req *http.Request) {
