@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/panaiotuzunov/Chirpy/internal/auth"
 	"github.com/panaiotuzunov/Chirpy/internal/database"
 )
 
@@ -79,7 +80,8 @@ func handlerHealthz(writer http.ResponseWriter, req *http.Request) {
 
 func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Request) {
 	var requestData struct {
-		Email string `json:"email"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&requestData); err != nil {
@@ -87,13 +89,24 @@ func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Re
 		writeErrorResponse(writer, http.StatusInternalServerError, "Error decoding JSON")
 		return
 	}
-	userResult, err := cfg.db.CreateUser(req.Context(), requestData.Email)
+	hashed_password, err := auth.HashPassword(requestData.Password)
+	if err != nil {
+		log.Printf("Error hashing password - %v", err)
+		writeErrorResponse(writer, http.StatusInternalServerError, "Error creating user.")
+		return
+	}
+	params := database.CreateUserParams{Email: requestData.Email, HashedPassword: hashed_password}
+	userResult, err := cfg.db.CreateUser(req.Context(), params)
 	if err != nil {
 		log.Printf("Error creating user - %v", err)
 		writeErrorResponse(writer, http.StatusInternalServerError, "Error creating user.")
 		return
 	}
 	writeJSONResponse(writer, http.StatusCreated, User{ID: userResult.ID, CreatedAt: userResult.CreatedAt, UpdatedAt: userResult.UpdatedAt, Email: userResult.Email})
+}
+
+func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request) {
+
 }
 
 func (cfg *apiConfig) handlerAddChirp(writer http.ResponseWriter, req *http.Request) {
@@ -209,6 +222,7 @@ func main() {
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.handlerGetChirp)
 	mux.HandleFunc("POST /api/chirps", cfg.handlerAddChirp)
 	mux.HandleFunc("POST /api/users", cfg.handlerCreateUser)
+	mux.HandleFunc("POST /api/login", cfg.handlerLogin)
 	log.Print("Server is running")
 	server.ListenAndServe()
 }
