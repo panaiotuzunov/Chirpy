@@ -2,23 +2,108 @@ package auth
 
 import (
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 )
 
-func TestHashPasswordAndCheckPasswordHash(t *testing.T) {
-	password := "MySecurePassword123!"
-	hash, err := HashPassword(password)
-	if err != nil {
-		t.Fatalf("HashPassword failed: %v", err)
+func TestCheckPasswordHash(t *testing.T) {
+	// First, we need to create some hashed passwords for testing
+	password1 := "correctPassword123!"
+	password2 := "anotherPassword456!"
+	hash1, _ := HashPassword(password1)
+	hash2, _ := HashPassword(password2)
+
+	tests := []struct {
+		name     string
+		password string
+		hash     string
+		wantErr  bool
+	}{
+		{
+			name:     "Correct password",
+			password: password1,
+			hash:     hash1,
+			wantErr:  false,
+		},
+		{
+			name:     "Incorrect password",
+			password: "wrongPassword",
+			hash:     hash1,
+			wantErr:  true,
+		},
+		{
+			name:     "Password doesn't match different hash",
+			password: password1,
+			hash:     hash2,
+			wantErr:  true,
+		},
+		{
+			name:     "Empty password",
+			password: "",
+			hash:     hash1,
+			wantErr:  true,
+		},
+		{
+			name:     "Invalid hash",
+			password: password1,
+			hash:     "invalidhash",
+			wantErr:  true,
+		},
 	}
-	if hash == "" {
-		t.Fatal("HashPassword returned empty hash")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckPasswordHash(tt.password, tt.hash)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CheckPasswordHash() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
-	err = CheckPasswordHash(password, hash)
-	if err != nil {
-		t.Errorf("CheckPasswordHash failed with correct password: %v", err)
+}
+
+func TestValidateJWT(t *testing.T) {
+	validToken, _ := MakeJWT(uuid.New(), "key", time.Minute)
+	expiredToken, _ := MakeJWT(uuid.New(), "key", -time.Minute)
+
+	tests := []struct {
+		name        string
+		tokenString string
+		key         string
+		wantErr     bool
+	}{
+		{
+			name:        "valid token, valid key",
+			tokenString: validToken,
+			key:         "key",
+			wantErr:     false,
+		},
+		{
+			name:        "valid token, invalid key",
+			tokenString: validToken,
+			key:         "secret",
+			wantErr:     true,
+		},
+		{
+			name:        "expired token",
+			tokenString: expiredToken,
+			key:         "key",
+			wantErr:     true,
+		},
+		{
+			name:        "empty token",
+			tokenString: "",
+			key:         "key",
+			wantErr:     true,
+		},
 	}
-	err = CheckPasswordHash("WrongPassword", hash)
-	if err == nil {
-		t.Error("CheckPasswordHash did not fail with incorrect password")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ValidateJWT(tt.tokenString, tt.key)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateJWT() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
