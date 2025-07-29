@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -8,7 +9,6 @@ import (
 )
 
 func TestCheckPasswordHash(t *testing.T) {
-	// First, we need to create some hashed passwords for testing
 	password1 := "correctPassword123!"
 	password2 := "anotherPassword456!"
 	hash1, _ := HashPassword(password1)
@@ -103,6 +103,54 @@ func TestValidateJWT(t *testing.T) {
 			_, err := ValidateJWT(tt.tokenString, tt.key)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateJWT() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestGetBearerToken(t *testing.T) {
+	tests := []struct {
+		name      string
+		header    http.Header
+		want      string
+		expectErr bool
+	}{
+		{
+			name: "valid token",
+			header: func() http.Header {
+				h := http.Header{}
+				h.Set("Authorization", "Bearer TOKEN_STRING")
+				return h
+			}(),
+			want:      "TOKEN_STRING",
+			expectErr: false,
+		},
+		{
+			name:      "missing Authorization header",
+			header:    http.Header{},
+			want:      "",
+			expectErr: true,
+		},
+		{
+			name: "empty Bearer token",
+			header: func() http.Header {
+				h := http.Header{}
+				h.Set("Authorization", "Bearer")
+				return h
+			}(),
+			want:      "",
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetBearerToken(tt.header)
+			if (err != nil) != tt.expectErr {
+				t.Errorf("GetBearerToken() error = %v, expectErr = %v", err, tt.expectErr)
+			}
+			if got != tt.want {
+				t.Errorf("GetBearerToken() = %q, want %q", got, tt.want)
 			}
 		})
 	}
