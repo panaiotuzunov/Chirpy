@@ -63,9 +63,13 @@ func GetBearerToken(headers http.Header) (string, error) {
 	if header == "" {
 		return "", fmt.Errorf("header 'Authorization' not found")
 	}
-	tokenString := strings.Split(header, " ")
-	if len(tokenString) != 2 {
-		return "", fmt.Errorf("incorrect bearer token")
+	stripedHeader := strings.TrimSpace(header)
+	if !strings.HasPrefix(stripedHeader, "Bearer") {
+		return "", fmt.Errorf("invalid token scheme")
 	}
-	return tokenString[1], nil
+	tokenString := strings.TrimSpace(strings.TrimPrefix(stripedHeader, "Bearer"))
+	if tokenString == "" {
+		return "", fmt.Errorf("empty token")
+	}
+	return tokenString, nil
 }

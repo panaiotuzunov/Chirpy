@@ -132,14 +132,34 @@ func TestGetBearerToken(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "empty Bearer token",
+			name: "wrong scheme",
 			header: func() http.Header {
 				h := http.Header{}
-				h.Set("Authorization", "Bearer")
+				h.Set("Authorization", "Basic abc123")
 				return h
 			}(),
 			want:      "",
 			expectErr: true,
+		},
+		{
+			name: "empty Bearer token",
+			header: func() http.Header {
+				h := http.Header{}
+				h.Set("Authorization", "Bearer ")
+				return h
+			}(),
+			want:      "",
+			expectErr: true,
+		},
+		{
+			name: "empty Bearer token",
+			header: func() http.Header {
+				h := http.Header{}
+				h.Set("Authorization", " Bearer TOKEN_STRING")
+				return h
+			}(),
+			want:      "TOKEN_STRING",
+			expectErr: false,
 		},
 	}
 

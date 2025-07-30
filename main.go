@@ -22,6 +22,7 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
 	platform       string
+	secret         string
 }
 type errorResponse struct {
 	Error string `json:"error"`
@@ -31,6 +32,7 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Token     string    `json:"token"`
 }
 type Chirp struct {
 	ID        uuid.UUID `json:"id"`
@@ -111,8 +113,9 @@ func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Re
 
 func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request) {
 	var requestData struct {
-		Password string `json:"password"`
-		Email    string `json:"email"`
+		Password         string `json:"password"`
+		Email            string `json:"email"`
+		ExpiresInSeconds int    `json:"expires_in_seconds"`
 	}
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&requestData); err != nil {
@@ -120,14 +123,24 @@ func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request
 		writeErrorResponse(writer, http.StatusInternalServerError, "Error decoding JSON")
 		return
 	}
+	expiration := requestData.ExpiresInSeconds
+	if requestData.ExpiresInSeconds < 1 || requestData.ExpiresInSeconds > 3600 {
+		expiration = 3600
+	}
 	user, err := cfg.db.GetUserByEmail(req.Context(), requestData.Email)
 	if err != nil {
 		log.Printf("Error getting user from DB: %s", err)
-		writeErrorResponse(writer, http.StatusInternalServerError, "DB Server Error.")
+		writeErrorResponse(writer, http.StatusUnauthorized, "DB Server Error.")
 		return
 	}
 	if err := auth.CheckPasswordHash(requestData.Password, user.HashedPassword); err != nil {
 		writeErrorResponse(writer, http.StatusUnauthorized, "incorrect email or password")
+		return
+	}
+	token, err := auth.MakeJWT(user.ID, cfg.secret, time.Second*time.Duration(expiration))
+	if err != nil {
+		log.Printf("Error creating token: %s", err)
+		writeErrorResponse(writer, http.StatusInternalServerError, "Server Error.")
 		return
 	}
 	writeJSONResponse(writer, http.StatusOK, User{
@@ -135,13 +148,13 @@ func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email:     user.Email,
+		Token:     token,
 	})
 }
 
 func (cfg *apiConfig) handlerAddChirp(writer http.ResponseWriter, req *http.Request) {
 	var requestData struct {
-		Body   string    `json:"body"`
-		UserID uuid.UUID `json:"user_id"`
+		Body string `json:"body"`
 	}
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&requestData); err != nil {
@@ -153,13 +166,30 @@ func (cfg *apiConfig) handlerAddChirp(writer http.ResponseWriter, req *http.Requ
 		writeErrorResponse(writer, http.StatusBadRequest, "Chirp is too long")
 		return
 	}
-	chirp, err := cfg.db.CreateChirp(req.Context(), database.CreateChirpParams{Body: hideProfanity(requestData.Body), UserID: requestData.UserID})
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		log.Printf("Error getting token: %s", err)
+		writeErrorResponse(writer, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	id, err := auth.ValidateJWT(token, cfg.secret)
+	if err != nil {
+		log.Printf("Error validating token: %s", err)
+		writeErrorResponse(writer, http.StatusUnauthorized, "Invalid token")
+		return
+	}
+	chirp, err := cfg.db.CreateChirp(req.Context(), database.CreateChirpParams{Body: hideProfanity(requestData.Body), UserID: id})
 	if err != nil {
 		log.Printf("Error decoding JSON: %s", err)
 		writeErrorResponse(writer, http.StatusInternalServerError, "Error creating chirp")
 		return
 	}
-	writeJSONResponse(writer, http.StatusCreated, Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID})
+	writeJSONResponse(writer, http.StatusCreated, Chirp{
+		ID:        chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID})
 }
 
 func (cfg *apiConfig) handlerChirps(writer http.ResponseWriter, req *http.Request) {
@@ -237,7 +267,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error connecting to DB - %v", err)
 	}
-	cfg := apiConfig{db: database.New(db), platform: os.Getenv("PLATFORM")}
+	cfg := apiConfig{
+		db:       database.New(db),
+		platform: os.Getenv("PLATFORM"),
+		secret:   os.Getenv("SECRET"),
+	}
 	mux := http.NewServeMux()
 	server := http.Server{
 		Handler: mux,
