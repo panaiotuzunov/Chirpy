@@ -43,6 +43,8 @@ type Chirp struct {
 }
 
 const maxChirpLength int = 140
+const accessTokenExpiration = time.Hour
+const refreshTokenExpiration = time.Hour * 60 * 24
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,19 +115,14 @@ func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Re
 
 func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request) {
 	var requestData struct {
-		Password         string `json:"password"`
-		Email            string `json:"email"`
-		ExpiresInSeconds int    `json:"expires_in_seconds"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&requestData); err != nil {
 		log.Printf("Error decoding JSON: %s", err)
 		writeErrorResponse(writer, http.StatusInternalServerError, "Error decoding JSON")
 		return
-	}
-	expiration := requestData.ExpiresInSeconds
-	if requestData.ExpiresInSeconds < 1 || requestData.ExpiresInSeconds > 3600 {
-		expiration = 3600
 	}
 	user, err := cfg.db.GetUserByEmail(req.Context(), requestData.Email)
 	if err != nil {
@@ -137,7 +134,7 @@ func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request
 		writeErrorResponse(writer, http.StatusUnauthorized, "incorrect email or password")
 		return
 	}
-	token, err := auth.MakeJWT(user.ID, cfg.secret, time.Second*time.Duration(expiration))
+	token, err := auth.MakeJWT(user.ID, cfg.secret, accessTokenExpiration)
 	if err != nil {
 		log.Printf("Error creating token: %s", err)
 		writeErrorResponse(writer, http.StatusInternalServerError, "Server Error.")
