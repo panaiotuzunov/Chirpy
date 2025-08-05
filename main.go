@@ -340,6 +340,43 @@ func (cfg *apiConfig) handlerUpdateCredentials(writer http.ResponseWriter, req *
 	})
 }
 
+func (cfg *apiConfig) handlerDeleteChirp(writer http.ResponseWriter, req *http.Request) {
+	tokenString, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		log.Printf("Error getting bearer token: %s", err)
+		writeErrorResponse(writer, http.StatusUnauthorized, "Missing or invalid token")
+		return
+	}
+	userID, err := auth.ValidateJWT(tokenString, cfg.secret)
+	if err != nil {
+		log.Printf("Error validating access token: %s", err)
+		writeErrorResponse(writer, http.StatusUnauthorized, "Missing or invalid token")
+		return
+	}
+	chirpID, err := uuid.Parse(req.PathValue("chirpID"))
+	if err != nil {
+		log.Printf("Error parsing chirpID argument: %s", err)
+		writeErrorResponse(writer, http.StatusBadRequest, "Invalid ID")
+		return
+	}
+	chirp, err := cfg.db.GetChirpByID(req.Context(), chirpID)
+	if err != nil {
+		log.Printf("Chirp not found: %s", err)
+		writeErrorResponse(writer, http.StatusNotFound, "No chirp found")
+		return
+	}
+	if chirp.UserID != userID {
+		writeErrorResponse(writer, http.StatusForbidden, "Forbidden")
+		return
+	}
+	if err := cfg.db.DeleteChirp(req.Context(), chirpID); err != nil {
+		log.Printf("Error deleting chirp: %s", err)
+		writeErrorResponse(writer, http.StatusInternalServerError, "Error deleting chirp")
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
 func writeJSONResponse(w http.ResponseWriter, statusCode int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -392,17 +429,18 @@ func main() {
 		Addr:    ":8080",
 	}
 	mux.Handle("/app/", cfg.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir("./")))))
-	mux.HandleFunc("GET /api/healthz", handlerHealthz)
 	mux.HandleFunc("GET /admin/metrics", cfg.ReturnMetrics)
 	mux.HandleFunc("POST /admin/reset", cfg.Reset)
+	mux.HandleFunc("GET /api/healthz", handlerHealthz)
 	mux.HandleFunc("GET /api/chirps", cfg.handlerChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.handlerGetChirp)
 	mux.HandleFunc("POST /api/chirps", cfg.handlerAddChirp)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", cfg.handlerDeleteChirp)
 	mux.HandleFunc("POST /api/users", cfg.handlerCreateUser)
+	mux.HandleFunc("PUT /api/users", cfg.handlerUpdateCredentials)
 	mux.HandleFunc("POST /api/login", cfg.handlerLogin)
 	mux.HandleFunc("POST /api/refresh", cfg.handlerRefresh)
 	mux.HandleFunc("POST /api/revoke", cfg.handlerRevoke)
-	mux.HandleFunc("PUT /api/users", cfg.handlerUpdateCredentials)
 	log.Print("Server is running")
 	server.ListenAndServe()
 }
