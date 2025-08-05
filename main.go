@@ -292,6 +292,54 @@ func (cfg *apiConfig) handlerRevoke(writer http.ResponseWriter, req *http.Reques
 	writer.WriteHeader(http.StatusNoContent)
 }
 
+func (cfg *apiConfig) handlerUpdateCredentials(writer http.ResponseWriter, req *http.Request) {
+	var requestData struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	tokenString, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		log.Printf("Error getting bearer token: %s", err)
+		writeErrorResponse(writer, http.StatusUnauthorized, "Missing or invalid token")
+		return
+	}
+	userID, err := auth.ValidateJWT(tokenString, cfg.secret)
+	if err != nil {
+		log.Printf("Error validating access token: %s", err)
+		writeErrorResponse(writer, http.StatusUnauthorized, "Missing or invalid token")
+		return
+	}
+	decoder := json.NewDecoder(req.Body)
+	if err := decoder.Decode(&requestData); err != nil {
+		log.Printf("Error decoding JSON: %s", err)
+		writeErrorResponse(writer, http.StatusBadRequest, "Error decoding JSON")
+		return
+	}
+	hashedPassword, err := auth.HashPassword(requestData.Password)
+	if err != nil {
+		log.Printf("Error hashing password: %s", err)
+		writeErrorResponse(writer, http.StatusInternalServerError, "Server error")
+		return
+	}
+	user, err := cfg.db.UpdateCredentials(req.Context(), database.UpdateCredentialsParams{
+		Email:          requestData.Email,
+		HashedPassword: hashedPassword,
+		ID:             userID,
+	})
+	if err != nil {
+		log.Printf("Error updating credentials: %s", err)
+		writeErrorResponse(writer, http.StatusInternalServerError, "DB Server error")
+		return
+	}
+	writeJSONResponse(writer, http.StatusOK, User{
+		ID:        user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email:     user.Email,
+		Token:     tokenString,
+	})
+}
+
 func writeJSONResponse(w http.ResponseWriter, statusCode int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -354,6 +402,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", cfg.handlerLogin)
 	mux.HandleFunc("POST /api/refresh", cfg.handlerRefresh)
 	mux.HandleFunc("POST /api/revoke", cfg.handlerRevoke)
+	mux.HandleFunc("PUT /api/users", cfg.handlerUpdateCredentials)
 	log.Print("Server is running")
 	server.ListenAndServe()
 }
