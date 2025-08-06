@@ -23,6 +23,7 @@ type apiConfig struct {
 	db             *database.Queries
 	platform       string
 	secret         string
+	polkaKey       string
 }
 type errorResponse struct {
 	Error string `json:"error"`
@@ -394,6 +395,12 @@ func (cfg *apiConfig) handlerUpgradeUserToChirpyRed(writer http.ResponseWriter, 
 		writeErrorResponse(writer, http.StatusBadRequest, "Error decoding JSON")
 		return
 	}
+	apiKey, err := auth.GetAPIKey(req.Header)
+	if err != nil || apiKey != cfg.polkaKey {
+		log.Printf("Error parsing API key: %s", err)
+		writeErrorResponse(writer, http.StatusUnauthorized, "Invalid API Key")
+		return
+	}
 	if requestData.Event != "user.upgraded" {
 		writer.WriteHeader(http.StatusNoContent)
 		return
@@ -462,6 +469,7 @@ func main() {
 		db:       database.New(db),
 		platform: os.Getenv("PLATFORM"),
 		secret:   os.Getenv("SECRET"),
+		polkaKey: os.Getenv("POLKA_KEY"),
 	}
 	mux := http.NewServeMux()
 	server := http.Server{
