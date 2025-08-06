@@ -212,13 +212,33 @@ func (cfg *apiConfig) handlerAddChirp(writer http.ResponseWriter, req *http.Requ
 }
 
 func (cfg *apiConfig) handlerChirps(writer http.ResponseWriter, req *http.Request) {
-	chirps, err := cfg.db.GetChirps(req.Context())
+	query := req.URL.Query().Get("author_id")
+	var resultChirps []Chirp
+	if query == "" {
+		chirps, err := cfg.db.GetChirps(req.Context())
+		if err != nil {
+			log.Printf("Error getting chirps from DB: %s", err)
+			writeErrorResponse(writer, http.StatusInternalServerError, "Error getting chirps")
+			return
+		}
+		for _, chirp := range chirps {
+			resultChirps = append(resultChirps, Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID})
+		}
+		writeJSONResponse(writer, http.StatusOK, resultChirps)
+		return
+	}
+	author_id, err := uuid.Parse(query)
+	if err != nil {
+		log.Printf("Error parsing uuid from query: %s", err)
+		writeErrorResponse(writer, http.StatusBadRequest, "Invalid author_id query")
+		return
+	}
+	chirps, err := cfg.db.GetChirpsByAuthor(req.Context(), author_id)
 	if err != nil {
 		log.Printf("Error getting chirps from DB: %s", err)
 		writeErrorResponse(writer, http.StatusInternalServerError, "Error getting chirps")
 		return
 	}
-	var resultChirps []Chirp
 	for _, chirp := range chirps {
 		resultChirps = append(resultChirps, Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID})
 	}
