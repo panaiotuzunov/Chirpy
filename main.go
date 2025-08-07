@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -212,9 +213,10 @@ func (cfg *apiConfig) handlerAddChirp(writer http.ResponseWriter, req *http.Requ
 }
 
 func (cfg *apiConfig) handlerChirps(writer http.ResponseWriter, req *http.Request) {
-	query := req.URL.Query().Get("author_id")
+	authorQuery := req.URL.Query().Get("author_id")
+	sortQuery := req.URL.Query().Get("sort")
 	var resultChirps []Chirp
-	if query == "" {
+	if authorQuery == "" {
 		chirps, err := cfg.db.GetChirps(req.Context())
 		if err != nil {
 			log.Printf("Error getting chirps from DB: %s", err)
@@ -224,16 +226,21 @@ func (cfg *apiConfig) handlerChirps(writer http.ResponseWriter, req *http.Reques
 		for _, chirp := range chirps {
 			resultChirps = append(resultChirps, Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID})
 		}
+		if sortQuery == "desc" {
+			sort.Slice(resultChirps, func(i, j int) bool {
+				return resultChirps[i].CreatedAt.After(resultChirps[j].CreatedAt)
+			})
+		}
 		writeJSONResponse(writer, http.StatusOK, resultChirps)
 		return
 	}
-	author_id, err := uuid.Parse(query)
+	authorID, err := uuid.Parse(authorQuery)
 	if err != nil {
 		log.Printf("Error parsing uuid from query: %s", err)
 		writeErrorResponse(writer, http.StatusBadRequest, "Invalid author_id query")
 		return
 	}
-	chirps, err := cfg.db.GetChirpsByAuthor(req.Context(), author_id)
+	chirps, err := cfg.db.GetChirpsByAuthor(req.Context(), authorID)
 	if err != nil {
 		log.Printf("Error getting chirps from DB: %s", err)
 		writeErrorResponse(writer, http.StatusInternalServerError, "Error getting chirps")
@@ -241,6 +248,11 @@ func (cfg *apiConfig) handlerChirps(writer http.ResponseWriter, req *http.Reques
 	}
 	for _, chirp := range chirps {
 		resultChirps = append(resultChirps, Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID})
+	}
+	if sortQuery == "desc" {
+		sort.Slice(resultChirps, func(i, j int) bool {
+			return resultChirps[i].CreatedAt.After(resultChirps[j].CreatedAt)
+		})
 	}
 	writeJSONResponse(writer, http.StatusOK, resultChirps)
 }
